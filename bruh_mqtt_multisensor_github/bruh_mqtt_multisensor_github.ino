@@ -26,8 +26,6 @@
 
 */
 
-
-
 #include <ESP8266WiFi.h>
 #include <DHT.h>
 #include <PubSubClient.h>
@@ -39,11 +37,11 @@
 
 
 /************ WIFI and MQTT INFORMATION (CHANGE THESE FOR YOUR SETUP) ******************/
-#define wifi_ssid "YourSSID" //type your WIFI information inside the quotes
-#define wifi_password "YourWIFIpassword"
-#define mqtt_server "your.mqtt.server.ip"
-#define mqtt_user "yourMQTTusername" 
-#define mqtt_password "yourMQTTpassword"
+#define wifi_ssid "TP-LINK_5A6B" //type your WIFI information inside the quotes
+#define wifi_password "43396153"
+#define mqtt_server "192.168.1.88"
+#define mqtt_user "ha" 
+#define mqtt_password "ha-local-ftw"
 #define mqtt_port 1883
 
 
@@ -59,7 +57,7 @@ const char* off_cmd = "OFF";
 
 /**************************** FOR OTA **************************************************/
 #define SENSORNAME "sensornode1"
-#define OTApassword "YouPassword" // change this to whatever password you want to use when you upload OTA
+#define OTApassword "ha-local-ftw" // change this to whatever password you want to use when you upload OTA
 int OTAport = 8266;
 
 
@@ -136,6 +134,29 @@ PubSubClient client(espClient);
 DHT dht(DHTPIN, DHTTYPE);
 
 
+void redLED() {
+  red = 255;
+  green = 0;
+  blue = 0;
+  setColor(red, green, blue);
+  stateOn = true;
+}
+
+void greenLED() {
+  red = 0;
+  green = 255;
+  blue = 0;
+  setColor(red, green, blue);
+  stateOn = true;
+}
+
+void ledOff() {
+  red = 0;
+  green = 0;
+  blue = 0;
+  setColor(red, green, blue);
+  stateOn = false;
+}
 
 /********************************** START SETUP*****************************************/
 void setup() {
@@ -192,6 +213,8 @@ void setup() {
   Serial.print("IPess: ");
   Serial.println(WiFi.localIP());
   reconnect();
+
+  ledOff();
 }
 
 
@@ -220,7 +243,6 @@ void setup_wifi() {
 }
 
 
-
 /********************************** START CALLBACK*****************************************/
 void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Message arrived [");
@@ -238,16 +260,15 @@ void callback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
+  realRed = 0;
+  realGreen = 0;
+  realBlue = 0;
+
   if (stateOn) {
     // Update lights
     realRed = map(red, 0, 255, 0, brightness);
     realGreen = map(green, 0, 255, 0, brightness);
     realBlue = map(blue, 0, 255, 0, brightness);
-  }
-  else {
-    realRed = 0;
-    realGreen = 0;
-    realBlue = 0;
   }
 
   startFade = true;
@@ -361,7 +382,6 @@ void sendState() {
   client.publish(light_state_topic, buffer, true);
 }
 
-
 /*
  * Calculate Heat Index value AKA "Real Feel"
  * NOAA heat index calculations taken from
@@ -446,44 +466,49 @@ void loop() {
 
   if (!inFade) {
 
-    float newTempValue = dht.readTemperature(true); //to use celsius remove the true text inside the parentheses  
+    bool updateRequired = false;
+
+    float newTempValue = dht.readTemperature(); //to use celsius remove the true text inside the parentheses  
     float newHumValue = dht.readHumidity();
 
     //PIR CODE
     pirValue = digitalRead(PIRPIN); //read state of the
 
     if (pirValue == LOW && pirStatus != 1) {
-      motionStatus = "standby";
-      sendState();
+      motionStatus = "standby";      
       pirStatus = 1;
+      ledOff();
+      updateRequired = true;
     }
-
     else if (pirValue == HIGH && pirStatus != 2) {
       motionStatus = "motion detected";
-      sendState();
       pirStatus = 2;
+      redLED();
+      updateRequired = true;
     }
 
     delay(100);
 
     if (checkBoundSensor(newTempValue, tempValue, diffTEMP)) {
       tempValue = newTempValue;
-      sendState();
+      updateRequired = true;
     }
 
     if (checkBoundSensor(newHumValue, humValue, diffHUM)) {
       humValue = newHumValue;
-      sendState();
+      updateRequired = true;
     }
-
 
     int newLDR = analogRead(LDRPIN);
 
     if (checkBoundSensor(newLDR, LDR, diffLDR)) {
+      updateRequired = true;
       LDR = newLDR;
-      sendState();
     }
 
+    if (updateRequired) {
+      sendState();
+    }
   }
 
   if (flash) {
