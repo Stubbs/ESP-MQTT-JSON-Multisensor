@@ -26,6 +26,7 @@
 
 */
 
+#include <Ticker.h>
 #include <ESP8266WiFi.h>
 #include <DHT.h>
 #include <PubSubClient.h>
@@ -33,7 +34,6 @@
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 #include <ArduinoJson.h>
-
 
 
 /************ WIFI and MQTT INFORMATION (CHANGE THESE FOR YOUR SETUP) ******************/
@@ -65,7 +65,7 @@ int OTAport = 8266;
 /**************************** PIN DEFINITIONS ********************************************/
 const int redPin = D1;
 const int greenPin = D2;
-const int bluePin = D3;
+const int bluePin = D4;
 #define PIRPIN    D5
 #define DHTPIN    D7
 #define DHTTYPE   DHT22
@@ -132,29 +132,21 @@ byte flashBrightness = brightness;
 WiFiClient espClient;
 PubSubClient client(espClient);
 DHT dht(DHTPIN, DHTTYPE);
+Ticker updateTimer;
 
 
 void redLED() {
-  red = 255;
-  green = 0;
-  blue = 0;
-  setColor(red, green, blue);
+  setColor(255, 0, 0);
   stateOn = true;
 }
 
 void greenLED() {
-  red = 0;
-  green = 255;
-  blue = 0;
-  setColor(red, green, blue);
+  setColor(0, 255, 0);
   stateOn = true;
 }
 
 void ledOff() {
-  red = 0;
-  green = 0;
-  blue = 0;
-  setColor(red, green, blue);
+  setColor(0, 0, 0);
   stateOn = false;
 }
 
@@ -213,6 +205,8 @@ void setup() {
   Serial.print("IPess: ");
   Serial.println(WiFi.localIP());
   reconnect();
+
+  updateTimer.attach(600, sendState);
 
   ledOff();
 }
@@ -356,16 +350,22 @@ bool processJson(char* message) {
 
 /********************************** START SEND STATE*****************************************/
 void sendState() {
+  // Save the current LED values.
+  byte oldRed = red;
+  byte oldGreen = green;
+  byte oldBlue = blue;
+
+  greenLED();
+
   StaticJsonBuffer<BUFFER_SIZE> jsonBuffer;
 
   JsonObject& root = jsonBuffer.createObject();
 
   root["state"] = (stateOn) ? on_cmd : off_cmd;
   JsonObject& color = root.createNestedObject("color");
-  color["r"] = red;
-  color["g"] = green;
-  color["b"] = blue;
-
+  color["r"] = oldRed;
+  color["g"] = oldGreen;
+  color["b"] = oldBlue;
 
   root["brightness"] = brightness;
   root["humidity"] = (String)humValue;
@@ -374,12 +374,12 @@ void sendState() {
   root["temperature"] = (String)tempValue;
   root["heatIndex"] = (String)calculateHeatIndex(humValue, tempValue);
 
-
   char buffer[root.measureLength() + 1];
   root.printTo(buffer, sizeof(buffer));
 
   Serial.println(buffer);
   client.publish(light_state_topic, buffer, true);
+  setColor(oldRed, oldGreen, oldBlue);
 }
 
 /*
@@ -420,9 +420,11 @@ void setColor(int inR, int inG, int inB) {
   Serial.print(inG);
   Serial.print(", b: ");
   Serial.println(inB);
+
+  red = inR;
+  green = inG;
+  blue = inB;
 }
-
-
 
 /********************************** START RECONNECT*****************************************/
 void reconnect() {
@@ -652,4 +654,5 @@ void software_Reset() // Restarts program from beginning but does not reset the 
 {
 Serial.print("resetting");
 ESP.reset(); 
+ledOff();
 }
